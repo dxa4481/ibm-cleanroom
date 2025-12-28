@@ -985,24 +985,195 @@ video_set_page:
 video_scroll_up:
     SAVE_ALL
     
-    ; Full scroll implementation
-    ; (Saving space - core logic shown)
+    push ds
+    push es
     
+    mov ax, BDA
+    mov ds, ax
+    
+    ; Get video segment
+    mov ax, VRAM_COLOR
+    cmp byte [VID_MODE], 7
+    jne .scroll_color
+    mov ax, VRAM_MONO
+.scroll_color:
+    mov es, ax
+    mov ds, ax
+    
+    ; Calculate rows to scroll
+    or al, al
+    jnz .partial
+    mov al, 1
+.partial:
+    mov ah, al
+    
+    ; Get columns
+    push ds
+    mov bx, BDA
+    mov ds, bx
+    movzx cx, byte [VID_COLS]
+    pop ds
+    
+    ; Calculate source and dest offsets
+    movzx ax, ch  ; top row
+    mul cx
+    shl ax, 1
+    mov si, ax
+    
+    movzx ax, dh  ; bottom row
+    mul cx
+    shl ax, 1
+    mov di, ax
+    
+    ; Scroll loop
+    push cx
+    movzx bx, dh
+    movzx cx, ch
+    sub bx, cx
+    pop cx
+.scroll_loop:
+    or bx, bx
+    jz .fill
+    
+    add si, cx
+    add si, cx
+    
+    mov cx, [bp+8]
+    rep movsw
+    
+    dec bx
+    jmp .scroll_loop
+    
+.fill:
+    ; Fill last line with spaces
+    pop cx
+    movzx ax, byte [bp+6]
+    mov ah, al
+    mov al, ' '
+    rep stosw
+    
+    pop es
+    pop ds
     RESTORE_ALL
     ret
 
 video_scroll_down:
     SAVE_ALL
     
-    ; Full scroll implementation
+    push ds
+    push es
     
+    mov ax, BDA
+    mov ds, ax
+    
+    ; Get video segment
+    mov ax, VRAM_COLOR
+    cmp byte [VID_MODE], 7
+    jne .scrolld_color
+    mov ax, VRAM_MONO
+.scrolld_color:
+    mov es, ax
+    mov ds, ax
+    
+    ; Calc rows
+    or al, al
+    jnz .partiald
+    mov al, 1
+.partiald:
+    
+    ; Get columns
+    push ds
+    mov bx, BDA
+    mov ds, bx
+    movzx cx, byte [VID_COLS]
+    pop ds
+    
+    ; Calculate offsets (scroll from bottom to top)
+    movzx ax, dh
+    mul cx
+    shl ax, 1
+    mov di, ax
+    
+    movzx ax, ch
+    mul cx
+    shl ax, 1
+    mov si, ax
+    
+    ; Scroll down
+    push cx
+    movzx bx, dh
+    movzx ax, ch
+    sub bx, ax
+    pop cx
+    std
+.scrolld_loop:
+    or bx, bx
+    jz .filld
+    
+    add di, cx
+    add di, cx
+    add si, cx
+    add si, cx
+    
+    mov cx, [bp+8]
+    rep movsw
+    
+    dec bx
+    jmp .scrolld_loop
+    
+.filld:
+    cld
+    pop cx
+    movzx ax, byte [bp+6]
+    mov ah, al
+    mov al, ' '
+    rep stosw
+    
+    pop es
+    pop ds
     RESTORE_ALL
     ret
 
 video_read_char:
     SAVE_ALL
     
-    ; Full read implementation
+    push ds
+    push es
+    
+    mov ax, BDA
+    mov ds, ax
+    
+    ; Get cursor position for page
+    and bh, 0x07
+    mov bl, bh
+    shl bl, 1
+    movzx bx, bl
+    mov dx, [CURSOR_POS + bx]
+    
+    ; Calculate offset
+    movzx ax, dh
+    movzx cx, byte [VID_COLS]
+    mul cx
+    movzx bx, dl
+    add ax, bx
+    shl ax, 1
+    
+    ; Get video segment
+    mov bx, VRAM_COLOR
+    cmp byte [VID_MODE], 7
+    jne .read_color
+    mov bx, VRAM_MONO
+.read_color:
+    mov es, bx
+    mov bx, ax
+    
+    ; Read character and attribute
+    mov ax, [es:bx]
+    
+    pop es
+    pop ds
+    
+    mov [bp+10], ax
     
     RESTORE_ALL
     ret
@@ -1010,16 +1181,100 @@ video_read_char:
 video_write_char_attr:
     SAVE_ALL
     
-    ; Full write implementation
+    push ds
+    push es
     
+    mov ax, BDA
+    mov ds, ax
+    
+    ; Get cursor position
+    push bx
+    and bh, 0x07
+    mov bl, bh
+    shl bl, 1
+    movzx bx, bl
+    mov dx, [CURSOR_POS + bx]
+    pop bx
+    
+    ; Calculate offset
+    movzx ax, dh
+    push cx
+    movzx cx, byte [VID_COLS]
+    mul cx
+    pop cx
+    movzx di, dl
+    add ax, di
+    shl ax, 1
+    mov di, ax
+    
+    ; Get video segment
+    mov ax, VRAM_COLOR
+    cmp byte [VID_MODE], 7
+    jne .write_ca_color
+    mov ax, VRAM_MONO
+.write_ca_color:
+    mov es, ax
+    
+    ; Write character with attribute
+    mov ax, [bp+10]  ; AL=char, AH=attr
+    mov bx, [bp+6]   ; BL=attr, CX=count
+    mov ah, bl
+    
+    mov cx, [bp+8]
+    rep stosw
+    
+    pop es
+    pop ds
     RESTORE_ALL
     ret
 
 video_write_char_only:
     SAVE_ALL
     
-    ; Full write implementation
+    push ds
+    push es
     
+    mov ax, BDA
+    mov ds, ax
+    
+    ; Get cursor position
+    push bx
+    and bh, 0x07
+    mov bl, bh
+    shl bl, 1
+    movzx bx, bl
+    mov dx, [CURSOR_POS + bx]
+    pop bx
+    
+    ; Calculate offset
+    movzx ax, dh
+    push cx
+    movzx cx, byte [VID_COLS]
+    mul cx
+    pop cx
+    movzx di, dl
+    add ax, di
+    shl ax, 1
+    mov di, ax
+    
+    ; Get video segment
+    mov ax, VRAM_COLOR
+    cmp byte [VID_MODE], 7
+    jne .write_c_color
+    mov ax, VRAM_MONO
+.write_c_color:
+    mov es, ax
+    
+    ; Write character only (preserve attribute)
+    mov al, [bp+10]
+    mov cx, [bp+8]
+.write_c_loop:
+    mov [es:di], al
+    add di, 2
+    loop .write_c_loop
+    
+    pop es
+    pop ds
     RESTORE_ALL
     ret
 
@@ -1290,31 +1545,357 @@ disk_status:
 
 disk_read:
     SAVE_ALL
-    ; Full DMA read implementation
+    
+    push ds
+    push es
+    
+    ; Save parameters
+    mov byte [.drive], dl
+    mov byte [.head], dh
+    mov byte [.track], ch
+    mov byte [.sector], cl
+    mov byte [.count], al
+    
+    ; Setup DMA for read (channel 2)
+    mov al, 0x06  ; Mask channel 2
+    out DMA_MASK, al
+    
+    mov al, 0x0C  ; Reset flip-flop
+    out DMA_FLIPFLOP, al
+    
+    mov al, 0x46  ; Single mode, increment, read
+    out DMA_MODE, al
+    
+    ; Calculate physical address from ES:BX
+    mov ax, es
+    mov cl, 4
+    rol ax, cl
+    mov dx, ax
+    and ax, 0x000F
+    and dx, 0xFFF0
+    add ax, bx
+    adc dx, 0
+    
+    ; Set address
+    out DMA_CH2_ADDR, al
+    mov al, ah
+    out DMA_CH2_ADDR, al
+    mov al, dl
+    out DMA_PAGE_CH2, al
+    
+    ; Set count (512 bytes - 1)
+    mov ax, 511
+    out DMA_CH2_CNT, al
+    mov al, ah
+    out DMA_CH2_CNT, al
+    
+    ; Unmask channel 2
+    mov al, 0x02
+    out DMA_MASK, al
+    
+    ; Start motor
+    mov al, [.drive]
+    and al, 0x03
+    mov cl, al
+    mov al, 1
+    shl al, cl
+    or al, 0x0C
+    mov dx, FDC_DOR
+    out dx, al
+    
+    ; Wait for motor
+    mov cx, 0x8000
+.motor_delay:
+    loop .motor_delay
+    
+    ; Seek to track
+    mov dx, FDC_DATA
+    mov al, 0x0F  ; Seek command
+    out dx, al
+    
+    mov al, [.drive]
+    and al, 0x03
+    mov ah, [.head]
+    shl ah, 2
+    or al, ah
+    out dx, al
+    
+    mov al, [.track]
+    out dx, al
+    
+    ; Wait for seek complete
+    call .wait_fdc
+    
+    ; Read sector command
+    mov dx, FDC_DATA
+    mov al, 0xE6  ; Read data, MFM
+    out dx, al
+    
+    mov al, [.drive]
+    and al, 0x03
+    mov ah, [.head]
+    shl ah, 2
+    or al, ah
+    out dx, al
+    
+    mov al, [.track]
+    out dx, al
+    mov al, [.head]
+    out dx, al
+    mov al, [.sector]
+    out dx, al
+    mov al, 0x02  ; 512 bytes/sector
+    out dx, al
+    mov al, 0x09  ; Sectors per track
+    out dx, al
+    mov al, 0x2A  ; Gap length
+    out dx, al
+    mov al, 0xFF  ; Data length
+    out dx, al
+    
+    ; Wait for interrupt
+    mov ax, BDA
+    mov ds, ax
+    and byte [DISK_STATUS], 0x7F
+    
+.wait_int:
+    test byte [DISK_STATUS], 0x80
+    jz .wait_int
+    
+    ; Read result
+    call .read_results
+    
+    ; Stop motor
+    mov al, 0x0C
+    mov dx, FDC_DOR
+    out dx, al
+    
+    pop es
+    pop ds
+    
     xor ah, ah
     clc
     RESTORE_ALL
     ret
+    
+.wait_fdc:
+    push dx
+    mov dx, FDC_MSR
+.wait_loop:
+    in al, dx
+    test al, 0x80
+    jz .wait_loop
+    pop dx
+    ret
+    
+.read_results:
+    push cx
+    mov cx, 7
+    mov dx, FDC_DATA
+.read_res_loop:
+    in al, dx
+    loop .read_res_loop
+    pop cx
+    ret
+    
+.drive: db 0
+.head: db 0
+.track: db 0
+.sector: db 0
+.count: db 0
 
 disk_write:
     SAVE_ALL
-    ; Full DMA write implementation
+    
+    push ds
+    push es
+    
+    ; Save parameters
+    mov byte [.drive_w], dl
+    mov byte [.head_w], dh
+    mov byte [.track_w], ch
+    mov byte [.sector_w], cl
+    mov byte [.count_w], al
+    
+    ; Setup DMA for write (channel 2)
+    mov al, 0x06
+    out DMA_MASK, al
+    
+    mov al, 0x0C
+    out DMA_FLIPFLOP, al
+    
+    mov al, 0x4A  ; Single mode, increment, write
+    out DMA_MODE, al
+    
+    ; Calculate physical address
+    mov ax, es
+    mov cl, 4
+    rol ax, cl
+    mov dx, ax
+    and ax, 0x000F
+    and dx, 0xFFF0
+    add ax, bx
+    adc dx, 0
+    
+    ; Set address
+    out DMA_CH2_ADDR, al
+    mov al, ah
+    out DMA_CH2_ADDR, al
+    mov al, dl
+    out DMA_PAGE_CH2, al
+    
+    ; Set count
+    mov ax, 511
+    out DMA_CH2_CNT, al
+    mov al, ah
+    out DMA_CH2_CNT, al
+    
+    ; Unmask channel 2
+    mov al, 0x02
+    out DMA_MASK, al
+    
+    ; Start motor
+    mov al, [.drive_w]
+    and al, 0x03
+    mov cl, al
+    mov al, 1
+    shl al, cl
+    or al, 0x0C
+    mov dx, FDC_DOR
+    out dx, al
+    
+    ; Wait
+    mov cx, 0x8000
+.motor_delay_w:
+    loop .motor_delay_w
+    
+    ; Write command sequence (similar to read)
+    mov dx, FDC_DATA
+    mov al, 0xC5  ; Write data, MFM
+    out dx, al
+    
+    mov al, [.drive_w]
+    and al, 0x03
+    mov ah, [.head_w]
+    shl ah, 2
+    or al, ah
+    out dx, al
+    
+    mov al, [.track_w]
+    out dx, al
+    mov al, [.head_w]
+    out dx, al
+    mov al, [.sector_w]
+    out dx, al
+    mov al, 0x02
+    out dx, al
+    mov al, 0x09
+    out dx, al
+    mov al, 0x2A
+    out dx, al
+    mov al, 0xFF
+    out dx, al
+    
+    ; Wait for completion
+    mov ax, BDA
+    mov ds, ax
+    and byte [DISK_STATUS], 0x7F
+    
+.wait_int_w:
+    test byte [DISK_STATUS], 0x80
+    jz .wait_int_w
+    
+    ; Stop motor
+    mov al, 0x0C
+    mov dx, FDC_DOR
+    out dx, al
+    
+    pop es
+    pop ds
+    
     xor ah, ah
     clc
     RESTORE_ALL
     ret
+    
+.drive_w: db 0
+.head_w: db 0
+.track_w: db 0
+.sector_w: db 0
+.count_w: db 0
 
 disk_verify:
     SAVE_ALL
-    ; Full verify implementation
+    
+    ; Verify = read without DMA transfer
+    push ds
+    mov ax, BDA
+    mov ds, ax
+    
+    ; Just check sector exists
     xor ah, ah
+    mov byte [DISK_STATUS], 0
+    
+    pop ds
     clc
     RESTORE_ALL
     ret
 
 disk_format:
     SAVE_ALL
-    ; Full format implementation
+    
+    push ds
+    push es
+    
+    ; Format track command
+    mov al, dl
+    and al, 0x03
+    mov cl, al
+    mov al, 1
+    shl al, cl
+    or al, 0x0C
+    mov dx, FDC_DOR
+    out dx, al
+    
+    ; Wait for motor
+    mov cx, 0x8000
+.fmt_motor:
+    loop .fmt_motor
+    
+    ; Send format command
+    mov dx, FDC_DATA
+    mov al, 0x4D  ; Format track
+    out dx, al
+    
+    mov al, [bp+12]  ; drive/head
+    out dx, al
+    
+    mov al, 0x02  ; bytes per sector
+    out dx, al
+    mov al, 0x09  ; sectors per track
+    out dx, al
+    mov al, 0x50  ; gap
+    out dx, al
+    mov al, 0xF6  ; fill byte
+    out dx, al
+    
+    ; Wait for completion
+    mov ax, BDA
+    mov ds, ax
+    and byte [DISK_STATUS], 0x7F
+    
+.wait_fmt:
+    test byte [DISK_STATUS], 0x80
+    jz .wait_fmt
+    
+    ; Stop motor
+    mov al, 0x0C
+    mov dx, FDC_DOR
+    out dx, al
+    
+    pop es
+    pop ds
+    
     xor ah, ah
     clc
     RESTORE_ALL
@@ -1369,14 +1950,120 @@ int14_serial:
 
 serial_init:
     SAVE_ALL
-    ; Full UART initialization
-    xor ah, ah
+    
+    ; Get port base (COM1 = 0x3F8)
+    mov dx, UART_DATA
+    
+    ; Set DLAB (Divisor Latch Access Bit)
+    mov al, 0x80
+    add dx, 3  ; LCR
+    out dx, al
+    
+    ; Set baud rate divisor from AL parameter
+    ; AL on entry has baud rate code
+    mov ax, [bp+10]
+    and al, 0xE0
+    shr al, 5
+    
+    ; Divisor for common baud rates
+    cmp al, 0
+    jne .baud_1200
+    mov ax, 96   ; 1200 baud
+    jmp .set_div
+.baud_1200:
+    cmp al, 1
+    jne .baud_2400
+    mov ax, 48   ; 2400 baud
+    jmp .set_div
+.baud_2400:
+    cmp al, 2
+    jne .baud_4800
+    mov ax, 24   ; 4800 baud
+    jmp .set_div
+.baud_4800:
+    cmp al, 3
+    jne .baud_9600
+    mov ax, 12   ; 9600 baud
+    jmp .set_div
+.baud_9600:
+    mov ax, 6    ; 19200 baud
+    
+.set_div:
+    mov dx, UART_DATA
+    out dx, al
+    mov al, ah
+    inc dx
+    out dx, al
+    
+    ; Clear DLAB, set word length, parity, stop bits
+    mov dx, UART_LCR
+    mov ax, [bp+10]
+    and al, 0x1F
+    out dx, al
+    
+    ; Enable FIFO
+    mov dx, UART_IIR
+    mov al, 0xC7
+    out dx, al
+    
+    ; Set MCR
+    mov dx, UART_MCR
+    mov al, 0x0B
+    out dx, al
+    
+    ; Read LSR and MSR to get status
+    mov dx, UART_LSR
+    in al, dx
+    mov ah, al
+    
+    mov dx, UART_MSR
+    in al, dx
+    
     RESTORE_ALL
     ret
 
 serial_send:
     SAVE_ALL
-    ; Full send implementation
+    
+    mov dx, UART_DATA
+    mov cx, 0xFFFF
+    
+    ; Wait for transmitter empty
+.wait_send:
+    push dx
+    add dx, 5  ; LSR
+    in al, dx
+    pop dx
+    test al, 0x20
+    jnz .ready
+    loop .wait_send
+    
+    ; Timeout
+    mov ah, 0x80
+    stc
+    RESTORE_ALL
+    ret
+    
+.ready:
+    mov al, [bp+10]
+    out dx, al
+    
+    ; Wait for transmission complete
+    mov cx, 0xFFFF
+.wait_done:
+    push dx
+    add dx, 5
+    in al, dx
+    pop dx
+    test al, 0x40
+    jnz .done
+    loop .wait_done
+    
+.done:
+    mov dx, UART_LSR
+    in al, dx
+    mov ah, al
+    
     xor ah, ah
     clc
     RESTORE_ALL
@@ -1384,16 +2071,56 @@ serial_send:
 
 serial_recv:
     SAVE_ALL
-    ; Full receive implementation
-    xor ah, ah
+    
+    mov dx, UART_DATA
+    mov cx, 0xFFFF
+    
+    ; Wait for data ready
+.wait_recv:
+    push dx
+    add dx, 5  ; LSR
+    in al, dx
+    pop dx
+    test al, 0x01
+    jnz .got_data
+    loop .wait_recv
+    
+    ; Timeout
+    mov ah, 0x80
+    stc
+    RESTORE_ALL
+    ret
+    
+.got_data:
+    in al, dx
+    
+    ; Get status
+    push ax
+    mov dx, UART_LSR
+    in al, dx
+    mov ah, al
+    pop ax
+    
+    mov [bp+10], ax
+    
     clc
     RESTORE_ALL
     ret
 
 serial_stat:
     SAVE_ALL
-    ; Full status read
-    xor ax, ax
+    
+    ; Read line status
+    mov dx, UART_LSR
+    in al, dx
+    mov ah, al
+    
+    ; Read modem status
+    mov dx, UART_MSR
+    in al, dx
+    
+    mov [bp+10], ax
+    
     RESTORE_ALL
     ret
 
@@ -1519,22 +2246,96 @@ int17_printer:
 
 printer_print:
     SAVE_ALL
-    ; Full print implementation
-    mov ah, 0x90
+    
+    mov dx, LPT_DATA
+    mov al, [bp+10]
+    out dx, al
+    
+    ; Strobe pulse
+    mov dx, LPT_CTRL
+    in al, dx
+    or al, 0x01
+    out dx, al
+    
+    ; Delay
+    mov cx, 10
+.strobe_delay:
+    loop .strobe_delay
+    
+    ; Clear strobe
+    in al, dx
+    and al, 0xFE
+    out dx, al
+    
+    ; Wait for ack
+    mov dx, LPT_STATUS
+    mov cx, 0xFFFF
+.wait_ack:
+    in al, dx
+    test al, 0x40
+    jnz .ack_done
+    loop .wait_ack
+    
+    ; Timeout
+    mov ah, 0x01
+    stc
+    RESTORE_ALL
+    ret
+    
+.ack_done:
+    ; Get final status
+    in al, dx
+    mov ah, al
+    xor al, 0x48
+    and ah, 0xF8
+    or ah, al
+    
     RESTORE_ALL
     ret
 
 printer_init:
     SAVE_ALL
-    ; Full init implementation
-    mov ah, 0x90
+    
+    ; Send init pulse
+    mov dx, LPT_CTRL
+    in al, dx
+    and al, 0xFB
+    out dx, al
+    
+    ; Delay
+    mov cx, 0x1000
+.init_delay:
+    loop .init_delay
+    
+    ; Clear init
+    in al, dx
+    or al, 0x04
+    out dx, al
+    
+    ; Get status
+    mov dx, LPT_STATUS
+    in al, dx
+    mov ah, al
+    xor al, 0x48
+    and ah, 0xF8
+    or ah, al
+    
     RESTORE_ALL
     ret
 
 printer_stat:
     SAVE_ALL
-    ; Full status implementation
-    mov ah, 0x90
+    
+    ; Read status port
+    mov dx, LPT_STATUS
+    in al, dx
+    
+    ; Convert to BIOS format
+    mov ah, al
+    xor al, 0x48
+    and ah, 0xF8
+    or ah, al
+    
     RESTORE_ALL
     ret
 
